@@ -8,6 +8,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+# ==========================================
+# LLM PROVIDER CONFIGURATION
+# ==========================================
+
 OLLAMA_URL = os.getenv(
     "OLLAMA_URL",
     "http://127.0.0.1:11434",
@@ -18,6 +22,21 @@ OLLAMA_MODEL = os.getenv(
     "qwen2.5:3b",
 )
 
+GROQ_API_KEY = os.getenv(
+    "GROQ_API_KEY",
+    "",
+)
+
+GROQ_MODEL = os.getenv(
+    "GROQ_MODEL",
+    "llama-3.3-70b-versatile",
+)
+
+LLM_PROVIDER = os.getenv(
+    "LLM_PROVIDER",
+    "ollama",
+).strip().lower()
+
 
 UNSUPPORTED_ANSWER = (
     "I could not find that information "
@@ -26,9 +45,13 @@ UNSUPPORTED_ANSWER = (
 
 
 class LLMServiceError(Exception):
-    """Raised when communication with Ollama fails."""
+    """Raised when communication with the AI provider fails."""
     pass
 
+
+# ==========================================
+# DOCUMENT-GROUNDED ANSWER PROMPT
+# ==========================================
 
 SYSTEM_PROMPT = """
 You are CortexIQ, a precise document-grounded
@@ -150,6 +173,10 @@ Return only the final answer.
 """
 
 
+# ==========================================
+# FOLLOW-UP QUESTION REWRITING PROMPT
+# ==========================================
+
 REWRITE_SYSTEM_PROMPT = """
 You rewrite follow-up questions into standalone
 search queries for a document retrieval system.
@@ -182,49 +209,106 @@ RULES:
 """
 
 
+# ==========================================
+# UNIFIED AI PROVIDER
+# ==========================================
+
 def _ollama_chat(
     messages: list[dict[str, str]],
     *,
     temperature: float = 0.1,
     num_ctx: int = 4096,
 ) -> str:
-    """Send messages to the configured Ollama model."""
+    """
+    Send chat messages to Groq or Ollama.
 
-    payload = {
-        "model": OLLAMA_MODEL,
-        "messages": messages,
-        "stream": False,
-        "options": {
+    The function name is preserved to maintain
+    compatibility with the existing RAG pipeline.
+
+    Set LLM_PROVIDER=groq for hosted inference.
+    Set LLM_PROVIDER=ollama for local inference.
+    """
+
+    if LLM_PROVIDER == "groq":
+        if not GROQ_API_KEY:
+            raise LLMServiceError(
+                "GROQ_API_KEY is not configured."
+            )
+
+        url = (
+            "https://api.groq.com/openai/v1/"
+            "chat/completions"
+        )
+
+        headers = {
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {
+            "model": GROQ_MODEL,
+            "messages": messages,
             "temperature": temperature,
-            "num_ctx": num_ctx,
-        },
-    }
+            "stream": False,
+        }
+
+    elif LLM_PROVIDER == "ollama":
+        url = f"{OLLAMA_URL}/api/chat"
+
+        headers = {}
+
+        payload = {
+            "model": OLLAMA_MODEL,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "temperature": temperature,
+                "num_ctx": num_ctx,
+            },
+        }
+
+    else:
+        raise LLMServiceError(
+            f"Unsupported LLM provider: {LLM_PROVIDER}"
+        )
 
     try:
-        with httpx.Client(
-            timeout=180.0
-        ) as client:
+        with httpx.Client(timeout=180.0) as client:
             response = client.post(
-                f"{OLLAMA_URL}/api/chat",
+                url,
+                headers=headers,
                 json=payload,
             )
 
             response.raise_for_status()
             result = response.json()
 
+    except httpx.HTTPStatusError as error:
+        raise LLMServiceError(
+            f"{LLM_PROVIDER} API returned "
+            f"HTTP {error.response.status_code}."
+        ) from error
+
     except httpx.HTTPError as error:
         raise LLMServiceError(
-            f"Unable to communicate with Ollama: {error}"
+            f"Unable to communicate with "
+            f"{LLM_PROVIDER}: "
+            f"{type(error).__name__}"
         ) from error
 
     except ValueError as error:
         raise LLMServiceError(
-            "Ollama returned invalid JSON."
+            "AI provider returned invalid JSON."
         ) from error
 
     try:
-        message = result["message"]
-        answer = message["content"]
+        if LLM_PROVIDER == "groq":
+            answer = (
+                result["choices"][0]
+                ["message"]["content"]
+            )
+        else:
+            answer = result["message"]["content"]
 
         if not isinstance(answer, str):
             raise TypeError(
@@ -235,20 +319,26 @@ def _ollama_chat(
 
     except (
         KeyError,
+        IndexError,
         TypeError,
         AttributeError,
     ) as error:
         raise LLMServiceError(
-            "Unexpected response format from Ollama."
+            "Unexpected response format "
+            "from AI provider."
         ) from error
 
     if not answer:
         raise LLMServiceError(
-            "Ollama returned an empty response."
+            "AI provider returned an empty response."
         )
 
     return answer
 
+
+# ==========================================
+# FOLLOW-UP QUESTION REWRITING
+# ==========================================
 
 def rewrite_followup_question(
     question: str,
@@ -355,6 +445,10 @@ Return only the rewritten query.
 
     return rewritten
 
+
+# ==========================================
+# DOCUMENT-GROUNDED ANSWER GENERATION
+# ==========================================
 
 def generate_answer(
     question: str,
