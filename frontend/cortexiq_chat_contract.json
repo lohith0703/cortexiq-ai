@@ -1,0 +1,159 @@
+{
+  "request": {
+    "properties": {
+      "question": {
+        "type": "string",
+        "maxLength": 2000,
+        "minLength": 1,
+        "title": "Question"
+      },
+      "top_k": {
+        "type": "integer",
+        "maximum": 5.0,
+        "minimum": 1.0,
+        "title": "Top K",
+        "default": 3
+      },
+      "verify_evidence": {
+        "type": "boolean",
+        "title": "Verify Evidence",
+        "default": false
+      }
+    },
+    "type": "object",
+    "required": [
+      "question"
+    ],
+    "title": "ChatRequest"
+  },
+  "response": {
+    "properties": {
+      "question": {
+        "type": "string",
+        "title": "Question"
+      },
+      "answer": {
+        "type": "string",
+        "title": "Answer"
+      },
+      "sources": {
+        "items": {
+          "$ref": "#/components/schemas/ChatSource"
+        },
+        "type": "array",
+        "title": "Sources"
+      },
+      "model": {
+        "type": "string",
+        "title": "Model"
+      },
+      "citation_validation": {
+        "$ref": "#/components/schemas/CitationValidationResponse"
+      },
+      "evidence_verification": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/EvidenceVerificationResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "type": "object",
+    "required": [
+      "question",
+      "answer",
+      "sources",
+      "model",
+      "citation_validation"
+    ],
+    "title": "ChatResponse"
+  },
+  "source": {
+    "properties": {
+      "citation": {
+        "type": "string",
+        "title": "Citation"
+      },
+      "document_id": {
+        "type": "string",
+        "title": "Document Id"
+      },
+      "filename": {
+        "type": "string",
+        "title": "Filename"
+      },
+      "chunk_id": {
+        "type": "integer",
+        "title": "Chunk Id"
+      },
+      "text": {
+        "type": "string",
+        "title": "Text"
+      }
+    },
+    "type": "object",
+    "required": [
+      "citation",
+      "document_id",
+      "filename",
+      "chunk_id",
+      "text"
+    ],
+    "title": "ChatSource"
+  },
+  "citation_validation": {
+    "properties": {
+      "has_citations": {
+        "type": "boolean",
+        "title": "Has Citations"
+      },
+      "references_valid": {
+        "type": "boolean",
+        "title": "References Valid"
+      },
+      "valid_citations": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array",
+        "title": "Valid Citations"
+      },
+      "invalid_citations": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array",
+        "title": "Invalid Citations"
+      },
+      "unused_citations": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array",
+        "title": "Unused Citations"
+      },
+      "citation_count": {
+        "type": "integer",
+        "title": "Citation Count"
+      },
+      "validation_type": {
+        "type": "string",
+        "title": "Validation Type"
+      }
+    },
+    "type": "object",
+    "required": [
+      "has_citations",
+      "references_valid",
+      "valid_citations",
+      "invalid_citations",
+      "unused_citations",
+      "citation_count",
+      "validation_type"
+    ],
+    "title": "CitationValidationResponse"
+  }
+}
