@@ -3,7 +3,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://YOUR-BACKEND-DOMAIN/:path*"
+      "destination": "https://cortexiq-ai.onrender.com/:path*"
     },
     {
       "source": "/(.*)",
