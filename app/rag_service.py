@@ -8,7 +8,6 @@ from app.llm_service import (
 )
 from app.reranking_service import rerank_results
 from app.citation_service import validate_citations
-from app.verification_pipeline import run_verification_pipeline
 
 
 MODEL_NAME = "qwen2.5:3b"
@@ -28,17 +27,18 @@ def answer_question(
     conversation_history: list[dict[str, str]] | None = None,
 ) -> dict:
     """
-    CortexIQ conversation-aware RAG pipeline:
+    CortexIQ conversation-aware RAG pipeline.
 
-    1. Resolve references using recent conversation history
-    2. Retrieve only the authenticated user's documents
-    3. Cross-encoder rerank retrieved passages
-    4. Construct citation-numbered evidence
-    5. Generate a document-grounded answer
-    6. Validate citation references
-    7. Optionally run experimental evidence verification
+    Steps:
+    1. Resolve follow-up questions using conversation history.
+    2. Retrieve documents belonging to the authenticated user.
+    3. Rerank retrieved passages using the ONNX cross-encoder.
+    4. Build citation-numbered evidence context.
+    5. Generate a document-grounded answer.
+    6. Validate citation references.
+    7. Optionally run experimental evidence verification.
 
-    Conversation history clarifies questions but is never
+    Conversation history helps clarify questions but is never
     treated as independent factual evidence.
     """
 
@@ -53,8 +53,7 @@ def answer_question(
 
     original_question = question.strip()
 
-    # Rewrite follow-up questions into standalone queries.
-    # This is skipped for conversations without history.
+    # Resolve follow-up questions into standalone queries.
     retrieval_query = original_question
 
     if conversation_history:
@@ -63,7 +62,7 @@ def answer_question(
             history=conversation_history,
         )
 
-    # Retrieve candidates belonging only to this user.
+    # Retrieve candidate passages belonging only to this user.
     candidates = hybrid_search(
         db=db,
         query=retrieval_query,
@@ -85,7 +84,7 @@ def answer_question(
             "evidence_verification": None,
         }
 
-    # Rerank using the standalone retrieval query.
+    # Rerank candidates using the standalone retrieval query.
     results = rerank_results(
         query=retrieval_query,
         results=candidates,
@@ -105,7 +104,7 @@ def answer_question(
             "evidence_verification": None,
         }
 
-    # Build evidence context with stable citation numbers.
+    # Build citation-numbered evidence context.
     context_parts = []
 
     for index, result in enumerate(results, start=1):
@@ -118,8 +117,7 @@ def answer_question(
 
     context = "\n\n".join(context_parts)
 
-    # Use the clarified query for generation.
-    # Factual answers must still come from retrieved documents.
+    # Generate an answer using retrieved document evidence.
     answer = generate_answer(
         question=retrieval_query,
         context=context,
@@ -139,6 +137,7 @@ def answer_question(
             }
         )
 
+    # Validate the citations returned by the LLM.
     citation_validation = validate_citations(
         answer=answer,
         sources=sources,
@@ -146,12 +145,19 @@ def answer_question(
 
     evidence_verification = None
 
+    # Lazy import prevents loading the NLI dependency
+    # during normal RAG requests.
     if verify_evidence:
         try:
+            from app.verification_pipeline import (
+                run_verification_pipeline,
+            )
+
             evidence_verification = run_verification_pipeline(
                 answer=answer,
                 sources=sources,
             )
+
         except Exception:
             evidence_verification = {
                 "verification_type": "experimental_nli",

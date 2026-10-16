@@ -51,3 +51,4 @@ temp/
 coverage/
 test-results/
 playwright-report/
+models/
